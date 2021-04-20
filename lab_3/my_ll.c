@@ -69,13 +69,12 @@ static void print_file_info(struct stat *buf) {
 
 // 判断 file 是否为 . 或者 .. 目录
 static bool curr_or_parent(const char *file) {
-    int len = strlen(file);
-    return (len == 1 && file[0] == '.') || (len == 2 && file[0] == '.' && file[1] == '.');
+    return !strcmp(file, ".") || !strcmp(file, "..");
 }
 
 int main(int argc, char *argv[]) {
-    bool show_all = false; // 默认展示所有文件（包括隐藏文件）的属性
-    bool show_curr_parent = false; // 默认展示当前文件夹和父文件夹的属性
+    bool show_all = false; // 默认不展示隐藏文件的属性
+    bool show_curr_parent = false; // 默认不展示当前文件夹和父文件夹的属性
     int (*stat_ptr)(const char*, struct stat*) = stat; // 默认展示软链接指向文件的属性
     init_month_arr(); // 初始化月表
     // 接受命令行参数
