@@ -9,8 +9,17 @@
 #include<pwd.h>
 #include<grp.h>
 #include<time.h>
+#include<stdbool.h>
+#include<string.h>
+#define MONTH 12
 
 static char curr_path[PATH_MAX];
+static char* month[MONTH];
+
+static void init_month_arr() {
+    month[0] = "Jan"; month[1] = "Feb"; month[2] = "Mar"; month[3] = "Apr"; month[4] = "May"; month[5] = "Jun";
+    month[6] = "Jul"; month[7] = "Aug"; month[8] = "Sep"; month[9] = "Oct"; month[10] = "Nov"; month[11] = "Dec";
+}
 
 static char file_type(mode_t mode) {
     if (S_ISREG(mode)) return '-';
@@ -54,10 +63,47 @@ static void print_file_info(struct stat *buf) {
     // 打印文件大小
     printf("%ld ", buf->st_size);
     // 打印文件最后修改时间
-    printf("%s ", ctime(&(buf->st_mtim)));
+    struct tm *time = localtime(&(buf->st_mtim));
+    printf("%s %d %d:%d ", month[time->tm_mon], time->tm_mday, time->tm_hour, time->tm_min);
+}
+
+// 判断 file 是否为 . 或者 .. 目录
+static bool curr_or_parent(const char *file) {
+    int len = strlen(file);
+    return (len == 1 && file[0] == '.') || (len == 2 && file[0] == '.' && file[1] == '.');
 }
 
 int main(int argc, char *argv[]) {
+    bool show_all = false; // 默认展示所有文件（包括隐藏文件）的属性
+    bool show_curr_parent = false; // 默认展示当前文件夹和父文件夹的属性
+    int (*stat_ptr)(const char*, struct stat*) = stat; // 默认展示软链接指向文件的属性
+    init_month_arr(); // 初始化月表
+    // 接受命令行参数
+    // -a : 展示所有文件
+    // -p : 展示当前文件夹和父文件夹的属性
+    // -l : 展示软链接本身的属性
+    int opt;
+    while ((opt = getopt(argc, argv, ":apl")) != -1)
+    {
+        switch (opt)
+        {
+        case 'a':
+            show_all = true;
+            break;
+        case 'p':
+            show_curr_parent = true;
+            break;
+        case 'l':
+            stat_ptr = lstat;
+            break;
+        case '?': 
+            printf("unknown option: %c\n", optopt);
+            return 0;
+        default:
+            break;
+        }
+    }
+    
     // 打开当前目录
     DIR *dp;
     struct dirent *dirp;
@@ -72,15 +118,20 @@ int main(int argc, char *argv[]) {
     // 循环遍历当前目录的目录项
     struct stat item;
     while ((dirp = readdir(dp)) != NULL) {
-        if (dirp->d_name[0] != '.') {
-            if (lstat(dirp->d_name, &item) < 0) {
-                perror(argv[0]);
-                return 0;
-            }
-            // 打印出文件的属性
-            print_file_info(&item);
-            printf("%s\n", dirp->d_name);
+        if (dirp->d_name[0] == '.') {
+            bool flag = curr_or_parent(dirp->d_name);
+            // 不对隐藏文件进行显示，跳过
+            if (!show_all && !flag) continue;
+            // 不对 . 和 .. 进行展示
+            if (!show_curr_parent && flag) continue;
+        } 
+        if (stat_ptr(dirp->d_name, &item) < 0) {
+            perror(argv[0]);
+            return 0;
         }
+        // 打印出文件的属性
+        print_file_info(&item);
+        printf("%s\n", dirp->d_name);
     }
     return 0;
 }
