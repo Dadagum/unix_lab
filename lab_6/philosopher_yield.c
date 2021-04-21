@@ -1,3 +1,4 @@
+#define _OPEN_THREADS  
 #include<unistd.h>
 #include<stdlib.h>
 #include<stdio.h>
@@ -16,7 +17,6 @@ static int sleep_time = 1;
 static phil *p_list; 
 static chop *c_list;
 
-extern int errno;
 
 static inline int left_chop(int idx) {
     return (idx+1) % cnt;
@@ -47,10 +47,11 @@ void *phil_routine(void *arg) {
             printf("phil[%d] is hungry!\n", idx);
             ret = pthread_mutex_trylock(&(c_list[left_chop(idx)].mtx));
             if (ret != 0) {
-                if (errno == EBUSY) { // 筷子已经被别人拿走，什么也不做
+                if (ret == EBUSY) { // 筷子已经被别人拿走，什么也不做
+                    sleep(1);
                     break;
                 } else {
-                    printf("phil[%d] - %s:%d - trylock error!\n", idx, __FILE__, __LINE__);
+                   // printf("phil[%d] - %s:%d - trylock error!\n", idx, __FILE__, __LINE__);
                     perror("phil_yield");
                     exit(EXIT_FAILURE);
                 }
@@ -58,17 +59,15 @@ void *phil_routine(void *arg) {
             printf("phil[%d] has required chop[%d]!\n", idx, left_chop(idx));
             // 刻意停顿一下等线程进行竞争
             sleep(1);
-
             ret = pthread_mutex_trylock(&(c_list[right_chop(idx)].mtx));
-            printf("%d: ret = %d\n", __LINE__, ret);
             if (ret != 0) {
-                if (errno == EBUSY) { // 筷子已经被别人拿走，让权，释放第一个筷子
+                if (ret == EBUSY) { // 筷子已经被别人拿走，让权，释放第一个筷子
                     printf("phil[%d] is releasing the first chop!\n", idx);
                     pthread_mutex_unlock(&(c_list[left_chop(idx)].mtx));
                     break;
                 } else {
-                    printf("phil[%d] - %s:%d - trylock error!\n", idx, __FILE__, __LINE__);
                     perror("phil_yield");
+                    printf("trylock error: phil[%d] - %d: ret = %d\n", idx, __LINE__, ret);
                     exit(EXIT_FAILURE);
                 }
             } 
