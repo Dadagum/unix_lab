@@ -17,7 +17,6 @@
 // 从而有效避免由于 main 线程结束，而 cp 线程没有结束导致线程被迫结束的情况
 // usage: ./cp_dir_thread [dir]
 static char cp_path[] = "/tmp/cp_dir"; // 拷贝文件所在的地方
-static char cp_elf_path[] = "/home/hongda/git/unix_lab/lab_2/my_cp"; // my_cp 程序所在位置
 
 // 保证 main 结束前所有 cp 线程都完成的条件变量
 pthread_cond_t can_exit = PTHREAD_COND_INITIALIZER;
@@ -37,27 +36,45 @@ static void dir_traverse(char *dir_name) {
     int base_len = strlen(dir_name);
     strncpy(new_path, dir_name, base_len);
     if (base_len >= PATH_MAX - 2) return;
-    new_path[base_len] = '/';
-    base_len++;
-
+    if (new_path[base_len-1] != '/') {
+        new_path[base_len] = '/';
+        base_len++;
+    }
     DIR *dp;
     struct dirent *dirp;
     if ((dp = opendir(dir_name)) == NULL) {
         printf("can not opendir : '%s'\n", dir_name);
         _exit(EXIT_FAILURE);
     }
-    // TODO: 以下部分都还没有改成多线程的内容，明天改
     while ((dirp = readdir(dp)) != NULL)
     {
         strncpy(new_path + base_len, dirp->d_name, strlen(dirp->d_name));
+        int new_len = strlen(new_path);
         // 目录文件: 递归进行文件 cp
         if (dirp->d_type == DT_DIR) {
             if (!curr_or_parent(dirp->d_name)) dir_traverse(new_path);
         } else {
             // 非目录文件：创建多线程进行 cp
-            // TODO
+            // 分配在堆空间，子线程执行完毕后需要释放这部分内存(因为子线程是 detach 的)
+            cp_arg *arg = (cp_arg*) malloc(sizeof(cp_arg));
+            arg->src_file = (char*) malloc(PATH_MAX);
+            arg->dest = (char*) malloc(PATH_MAX);
+            memset(arg->src_file, 0, PATH_MAX);
+            memset(arg->dest, 0, PATH_MAX);
+            strncpy(arg->src_file, new_path, new_len);
+            strncpy(arg->dest, cp_path, strlen(cp_path));
+            pthread_t thr;
+            // 需要创建线程，提前更新 alives 数量
+            pthread_mutex_lock(&mutex);
+            ++alives;
+            pthread_mutex_unlock(&mutex);
+            int ret = pthread_create(&thr, NULL, cp_routine, arg);
+            if (ret != 0) {
+                printf("fail to create cp thread!\n");
+                exit(EXIT_FAILURE);
+            }
         }
-        // 父进程进行路径的回溯(重新置 0)
+        // 进行路径的回溯(重新置 0)
         memset(new_path + base_len, 0, strlen(dirp->d_name));
     }
 }
@@ -107,6 +124,7 @@ int main(int argc, char* argv[]) {
     while (alives != 0) {
         pthread_cond_wait(&can_exit, &mutex);
     }
+    pthread_mutex_unlock(&mutex); 
     exit(EXIT_SUCCESS);
 }
 

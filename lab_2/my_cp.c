@@ -6,6 +6,7 @@
 #include<errno.h>
 #include<string.h>
 #include<stdbool.h>
+#include<linux/limits.h>
 #define BUF_SIZE 1024
 
 // 仿写 cp 命令
@@ -17,18 +18,17 @@ static bool file_exists(char *filename) {
 }
 
 static void copy_file(int in_fd, int out_fd) {
-    static char *buffer[BUF_SIZE];
+    char *buffer[BUF_SIZE];
     int num_read;
     while ((num_read = read(in_fd, buffer, BUF_SIZE)) > 0) {
         write(out_fd, buffer, num_read);
     }
 }
 
-static char* new_path(char *path, char *file) {
-    static char new_path[FILENAME_MAX];
+static void new_path(char *path, char *file, char *new_path) {
     int path_len = strlen(path);
     int file_len = strlen(file);
-    if (path_len + file_len >= FILENAME_MAX) return NULL;
+    if (path_len + file_len >= PATH_MAX) return;
     memcpy(new_path, path, path_len);
     // 检查 path 结尾是否已经有 / 符号
     if (new_path[path_len-1] != '/') {
@@ -42,7 +42,6 @@ static char* new_path(char *path, char *file) {
     } else tmp++;
     // 构建 path/filename 的路径
     strncpy(new_path + path_len, tmp, file_len);
-    return new_path;
 }
 
 // 调用前保证 file 已经存在，让用户决定覆盖还是追加内容
@@ -110,7 +109,9 @@ int main(int argc, char *argv[]) {
         // dest 已经存在
         if (S_ISDIR(dest_stat.st_mode)) {
             // dest 为目录，构建新的文件，使用同名文件
-            char *new_name = new_path(argv[2], argv[1]);
+            char new_name[PATH_MAX];
+            memset(new_name, 0, PATH_MAX);
+            new_path(argv[2], argv[1], new_name);
             // 查看新生成的文件名是否已经有文件存在，不存在则创建新的文件
             out_fd = file_exists(new_name) ? overwrite_or_append(new_name) : open(new_name, O_CREAT | O_EXCL | O_RDWR);
         } else {

@@ -39,7 +39,6 @@ static void dir_traverse(char *dir_name) {
     }
     while ((dirp = readdir(dp)) != NULL)
     {
-
         strncpy(new_path + base_len, dirp->d_name, strlen(dirp->d_name));
         // 目录文件: 递归进行文件 cp
         if (dirp->d_type == DT_DIR) {

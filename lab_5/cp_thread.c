@@ -33,7 +33,7 @@ static void copy_file(int in_fd, int out_fd) {
 static void new_path(char *path, char *file, char *new_path) {
     int path_len = strlen(path);
     int file_len = strlen(file);
-    if (path_len + file_len >= FILENAME_MAX) return NULL;
+    if (path_len + file_len >= FILENAME_MAX) return;
     memcpy(new_path, path, path_len);
     // 检查 path 结尾是否已经有 / 符号
     if (new_path[path_len-1] != '/') {
@@ -49,28 +49,16 @@ static void new_path(char *path, char *file, char *new_path) {
     strncpy(new_path + path_len, tmp, file_len);
 }
 
-// 调用前保证 file 已经存在，让用户决定覆盖还是追加内容
-// 成果返回新文件的 fd，失败返回 -1 或者
+// 成功返回新文件的 fd，失败返回 -1 或者
+// 多线程版本默认覆盖
 static int overwrite_or_append(char *file) {
-    printf("file '%s' exists! type 'o' to overwrite or 'a' to append!\n", file);
-    char cmd = getchar();
-    switch (cmd)
-    {
-    case 'o':
-        // 先删除原有文件
-        if (remove(file) != 0) {
-            printf("can not overwrite dest_file!\n");
-            return -1;
-        }
-        // 创建新的同名文件
-        return open(file, O_CREAT | O_EXCL | O_RDWR);
-    case 'a' :
-        // 追加模式
-        return open(file, O_RDWR | O_APPEND);
-    default:
-        printf("unknown option. exit!\n");
+    // 先删除原有文件
+    if (remove(file) != 0) {
+        printf("can not overwrite dest_file!\n");
         return -1;
     }
+    // 创建新的同名文件
+    return open(file, O_CREAT | O_EXCL | O_RDWR);
 }
 
 // cp 线程例程
@@ -79,7 +67,7 @@ void *cp_routine(void *arg) {
     cp_arg* param = (cp_arg*) arg;
     char *src_file = param->src_file;
     char *dest = param->dest;
-    if (!file_exists(argv[1])) {
+    if (!file_exists(src_file)) {
         printf("file '%s' does not exist!\n", src_file);
         return NULL;
     }
@@ -113,6 +101,7 @@ void *cp_routine(void *arg) {
         // dest 已经存在
         if (S_ISDIR(dest_stat.st_mode)) {
             char new_name[PATH_MAX];
+            memset(new_name, 0, PATH_MAX);
             // dest 为目录，构建新的文件，使用同名文件
             new_path(dest, src_file, new_name);
             // 查看新生成的文件名是否已经有文件存在，不存在则创建新的文件
@@ -131,12 +120,16 @@ void *cp_routine(void *arg) {
     }
     close(in_fd);
     close(out_fd);
-
+    // 释放参数的堆内存
+    free(param->dest);
+    free(param->src_file);
+    free(param);
     // 更新 cp alives 线程数量
-    pthread_mutex_lock(mutex);
+    pthread_mutex_lock(&mutex);
     --alives;
     // 最后一个活着的 cp 线程，此时可以唤醒 main 线程了
-    if (alives == 0) pthread_cond_signal(can_exit);
-    pthread_mutex_unlock(mutex);
+    if (alives == 0) pthread_cond_signal(&can_exit);
+    pthread_mutex_unlock(&mutex);
+
     return NULL;
 }
